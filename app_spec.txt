@@ -1,0 +1,150 @@
+
+
+# PromptPal CLI - App Specification
+
+## Overview
+PromptPal CLI is a single‑binary command line tool that lets developers store, version, retrieve, and diff prompts for any LLM‑powered agent framework. Prompts are kept in a local encrypted SQLite database with Git‑style change logs, enabling CI/CD pipelines to test prompt changes safely. The tool is aimed at solo developers who need reliable prompt iteration as part of their workflow.
+
+**Problem Statement**: Managing prompt versions across experiments is error‑prone; developers copy‑paste prompts into source files, causing drift and making reproducible agent behavior hard to achieve.  
+**Target Audience**: Solo developers who build LLM‑powered agents and need reliable prompt iteration as part of their workflow.
+
+## Tech Stack
+- Python 3.11+
+- click (CLI framework)
+- cryptography (encryption, Fernet)
+- sqlite3 (stdlib)
+- difflib (stdlib) for generating unified diffs
+
+## Environment Setup
+
+### Prerequisites
+- Python 3.11+
+- pip (to install click and cryptography)
+
+### Configuration
+| Environment Variable | Description                               | Default                                   |
+|--------------------|-------------------------------------------|-------------------------------------------|
+| PROMPTPASS         | Passphrase used to derive encryption key  | empty (uses built‑in fallback key)        |
+| PROMPTPATH         | Directory where the SQLite DB is stored   | `~/.promptpal`                            |
+
+## Architecture
+```
+[User] --> (CLI) --> [Encryption Layer] --> [SQLite DB]
+                |                         |
+                +--> (Input/Output) <--+
+```
+The CLI parses commands, calls the encryption layer to protect content, and interacts with a single SQLite file. All processing happens in one process; no external services are called.
+
+## Core Features
+
+### Feature 1: `promptpal init`
+**Description**: Initialize a new encrypted prompt repository. Creates the storage directory and SQLite database with a table for prompts. The encryption key is derived from the `PROMPTPASS` environment variable (or a fallback built‑in key). Running `init` on an existing repository is a no‑op.
+
+**Requirements**:
+- Creates `$PROMPTPATH` if it does not exist.
+- Creates `$PROMPTPATH/promptpal.db` if it does not exist.
+- Initializes table `prompts` with columns:  
+  `id INTEGER PRIMARY KEY`,  
+  `name TEXT`,  
+  `version INTEGER`,  
+  `content BLOB`,  
+  `timestamp TEXT`.
+- Content is stored encrypted using AES‑256‑GCM via `cryptography.Fernet`.
+- If the database already exists, prints “Repository already initialized.” and exits with code 0.
+
+**Test Steps**:
+1. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal init`  
+   → creates `/tmp/promptpal_test/promptpal.db` (no error output) and returns exit code 0.
+2. Same command again → prints `Repository already initialized.` and returns exit code 0.
+3. Verify file size > 0 and that querying the DB shows the `prompts` table.
+
+### Feature 2: `promptpal add`
+**Description**: Store a new version of a prompt. Takes a prompt name and raw content (via `--content` option or STDIN). Increments the version number for that name, stores the encrypted content and an ISO‑8601 timestamp. If the name does not exist, version starts at 1.
+
+**Requirements**:
+- Accepts `<name>` as positional argument.
+- Accepts `--content "<text>"`; if omitted, reads content from STDIN.
+- Validates that content is non‑empty; otherwise exits with code 1 and prints an error.
+- Looks up current max version for the given `name`; `new_version = max_version + 1` (or 1 if none).
+- Encrypts the content with the repository key and inserts a row `(name, new_version, encrypted_content, timestamp)`.
+- Prints `Stored <name> v<new_version>` on success.
+- Handles SQLite integrity errors gracefully (exit ≠ 0, informative message).
+
+**Test Steps**:
+1. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal add greet --content "Hello, {name}!"`  
+   → prints `Stored greet v1` and returns 0.
+2. `echo "Hi there" | PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal add greet`  
+   → reads from STDIN, prints `Stored greet v2` and returns 0.
+3. Using the system `sqlite3` tool, verify two rows exist for name `greet` with versions 1 and 2 and that the `content` column differs (encrypted blobs).
+4. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal add greet --content ""`  
+   → prints error message about empty content and exits with code 1.
+
+### Feature 3: `promptpal diff`
+**Description**: Show differences between two versions of a prompt. By default compares the latest version with the previous one. User can specify `--from` and `--to` version numbers. Output is a unified diff of the decrypted plain‑text prompts.
+
+**Requirements**:
+- Accepts `<name>` positional argument.
+- Optional `--from <int>` and `--to <int>`.
+- If only one of `--from`/`--to` is provided, the other defaults to the latest version.
+- If neither provided, `--to` = latest version, `--from` = latest‑1 (if such a version exists).
+- Decrypts content for both versions using the repository key.
+- Uses `difflib.unified_diff` to generate a unified diff; prints to STDOUT.
+- If either version is not found, prints error message and exits with code 1.
+- If there are no differences, prints nothing (or `No differences`) and exits with 0.
+
+**Test Steps**:
+1. Initialize repo, add prompt `foo` v1 content `foo`, then v2 content `foo bar`.
+2. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal diff foo`  
+   → prints a unified diff showing the added line ` bar` and returns 0.
+3. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal diff foo --from 1 --to 2`  
+   → same output as step 2.
+4. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal diff foo --from 2 --to 2`  
+   → prints nothing (or `No differences`) and returns 0.
+5. `PROMPTPATH=/tmp/promptpal_test PROMPTPASS=secret promptpal diff foo --from 3 --to 3`  
+   → prints error about missing version and exits with code 1.
+
+## Data Models
+```python
+# models.py
+from pydantic import BaseModel
+from datetime import datetime
+
+class PromptRecord(BaseModel):
+    """Plain‑text representation of a prompt as used internally."""
+    name: str
+    version: int
+    content: str          # decrypted prompt text
+    timestamp: datetime   # stored as ISO‑8601 string in DB
+```
+The storage layer converts `PromptRecord.content` to an encrypted blob before writing to the `prompts.content` column and decrypts it when reading.
+
+## File Structure
+```
+promptpal/
+├── __init__.py
+├── cli.py          # Click command group + subcommands (init, add, diff)
+├── core.py         # DB initialization, connection helpers, encryption utilities
+├── store.py        # Logic for adding a prompt and retrieving versions
+├── diff.py         # Diff implementation using difflib
+├── models.py       # Pydantic model defined above
+└── tests/
+    ├── test_cli.py
+    ├── test_store.py
+    └── test_diff.py
+```
+Total: 9 files (including `__init__.py`), well under the 12‑file limit.
+
+## Success Criteria
+- `promptpal init` creates a readable/writable encrypted DB file at `$PROMPTPATH/promptpal.db`.
+- `promptpal add` correctly stores and increments versions; direct SQL inspection shows encrypted blobs that differ per version.
+- `promptpal diff` produces the expected unified diff for known changes and exits with appropriate status codes.
+- All commands return 0 on success and non‑zero on failure with helpful messages.
+- The tool operates completely offline; no network sockets are opened (verifiable with `strace` or similar).
+- Dependencies limited to the Python standard library plus `click` and `cryptography` (≤ 5 pip packages total).
+
+## Constraints & Notes
+- No external API calls – all processing is local; encryption uses a key derived from `PROMPTPASS` or a built‑in fallback.
+- Target: working MVP in approximately 5 build iterations (≈ one iteration per core feature).
+- Prioritize correctness over exhaustive feature set; the MVP includes `init`, `add`, and `diff`.
+- The SQLite database never contains plain‑text prompt content; it is always stored encrypted.
+- The application is single‑process; no background servers, workers, or message queues are used.
