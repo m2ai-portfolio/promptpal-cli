@@ -1,0 +1,42 @@
+{
+  "project": "PromptPal CLI",
+  "tech_stack": "Python 3.11+, click, cryptography (Fernet), sqlite3, difflib, pydantic",
+  "codebase_patterns": {
+    "architecture": "Three-layer: cli.py (user interaction) -> store.py/diff.py (business logic) -> core.py (utilities)",
+    "file_structure": {
+      "cli.py": "Click command group + subcommands",
+      "core.py": "DB initialization, connection helpers, encryption utilities",
+      "store.py": "Logic for adding/retrieving prompts",
+      "diff.py": "Diff implementation using difflib",
+      "models.py": "Pydantic PromptRecord model"
+    },
+    "error_handling": "Catch specific exceptions first (FileNotFoundError, IntegrityError), then generic Exception. Use click.echo(err=True) + sys.exit(1)",
+    "db_pattern": "Open connection, try/except/finally, always close in finally block. Row factory set to sqlite3.Row",
+    "encryption": "Fernet (AES-128-CBC + HMAC-SHA256) via cryptography library. PBKDF2-HMAC-SHA256 with 100k iterations for key derivation",
+    "env_vars": {
+      "PROMPTPASS": "Passphrase for encryption key derivation (fallback key if empty)",
+      "PROMPTPATH": "Database directory (default ~/.promptpal)"
+    }
+  },
+  "common_mistakes": [
+    "Always use parameterized SQL queries (? placeholders), never string formatting",
+    "Always close DB connections in finally blocks",
+    "Validate user input before processing (empty content, missing versions)",
+    "datetime.utcnow() is deprecated in Python 3.12+ - consider datetime.now(timezone.utc)"
+  ],
+  "security_patterns": [
+    "Parameterized SQL queries prevent injection",
+    "Content always encrypted before storage, decrypted on retrieval",
+    "Key derived from passphrase, never stored plaintext",
+    "UNIQUE constraints on (name, version) for data integrity"
+  ],
+  "session_history": [
+    {
+      "session": 1,
+      "features_completed": ["promptpal init (M2A-334)", "promptpal add (M2A-336)", "promptpal diff (M2A-339)"],
+      "total_qa_tests_passed": 22,
+      "code_reviews": 3,
+      "status": "PROJECT COMPLETE"
+    }
+  ]
+}
