@@ -3,6 +3,7 @@
 import click
 import sys
 from .core import init_db
+from .store import add_prompt
 
 
 @click.group()
@@ -43,10 +44,35 @@ def add(name: str, content: str):
     """
     Store a new version of a prompt.
 
-    Placeholder for Feature 2 (not yet implemented).
+    Takes a prompt name and raw content (via --content option or STDIN).
+    Increments the version number for that name, stores the encrypted content
+    and an ISO-8601 timestamp.
     """
-    click.echo(f"'add' command not yet implemented (name={name})")
-    sys.exit(1)
+    try:
+        # If --content not provided, read from STDIN
+        if content is None:
+            content = sys.stdin.read()
+
+        # Validate that content is non-empty
+        if not content or content.strip() == "":
+            click.echo("Error: Prompt content cannot be empty", err=True)
+            sys.exit(1)
+
+        # Store the prompt
+        version = add_prompt(name, content)
+
+        # Print success message
+        click.echo(f"Stored {name} v{version}")
+        sys.exit(0)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("Run 'promptpal init' to initialize the repository first.", err=True)
+        sys.exit(1)
+
+    except Exception as e:
+        click.echo(f"Error storing prompt: {e}", err=True)
+        sys.exit(1)
 
 
 @cli.command()
