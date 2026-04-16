@@ -2,7 +2,7 @@
   <img src="assets/infographic.png" alt="PromptPal CLI" width="800">
 </p>
 
-<h3 align="center">A single‑binary command line tool that lets developers store, version, retrieve, and diff prompts for any agent framework. Prompts are kept in a local encrypted SQLite database with Git‑style change logs, enabling CI/CD pipelines to test prompt changes safely.</h3>
+<h3 align="center">A single-binary command line tool that lets developers store, version, retrieve, and diff prompts for any agent framework. Prompts are kept in a local encrypted SQLite database with Git-style change logs, enabling CI/CD pipelines to test prompt changes safely.</h3>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
@@ -11,122 +11,134 @@
   <a href="#contributing">Contributing</a>
 </p>
 
-## What is this?
-PromptPal CLI is a single‑binary utility that helps AI developers manage prompt versions locally. It stores prompts in an encrypted SQLite database, tracks changes like Git, and lets you retrieve or compare any version with simple commands.
+**What is this?**  
+PromptPal CLI is a lightweight utility for developers who work with language model prompts. It provides versioned storage, retrieval, and diff capabilities so teams can track prompt evolution and reproduce agent behavior reliably.  
+Example usage:
 
 ```
-$ promptpal add "Summarize article" --content "Provide a concise summary of the given text."
-Prompt 'Summarize article' stored with ID: a1b2c3d4
+$ promptpal store --name "qa-assistant" --content "Answer the user's question concisely."
+Stored prompt "qa-assistant" with ID 1
 ```
 
-## Problem
+**Problem**  
 Managing prompt versions across experiments is error‑prone; developers copy‑paste prompts into source files, causing drift and making reproducible agent behavior hard to achieve.
 
-## Features
+**Features**
+
 | Feature | Description |
 |---------|-------------|
-| Encrypted storage | Prompts are saved in a local SQLite database protected by a user‑defined passphrase. |
-| Git‑style versioning | Each save creates a new revision with a hash, enabling log, checkout, and diff operations. |
-| Prompt retrieval | Fetch any prompt by name, ID, or revision using flexible query options. |
-| Diff tool | Compare two prompt revisions side‑by‑side with highlighted changes. |
-| CLI‑first design | All functionality accessible via a single binary with intuitive subcommands. |
-| CI/CD friendly | Deterministic output and export hooks allow automated testing of prompt changes. |
-| Passphrase rotation | Update the encryption key without re‑importing existing prompts. |
-| Plugin‑ready core | Core logic isolated in `core.py` and `store.py` for easy extension. |
+| Encrypted storage | Prompts are saved in a local SQLite database protected with AES‑256 encryption. |
+| Version control | Each save creates a new version with a Git‑style commit log, enabling history tracking. |
+| Retrieve by name or ID | Fetch the latest prompt or a specific version using a simple lookup. |
+| Diff comparisons | Show line‑by‑line changes between any two versions of a prompt. |
+| List all prompts | View a summary of stored prompts with their latest version numbers. |
+| Delete prompts | Remove a prompt and all its versions when no longer needed. |
+| CI/CD friendly | The CLI returns non‑zero exit codes on failures, suitable for automated pipelines. |
+| Plug‑in agnostic | Works with any agent framework because it stores plain‑text prompts only. |
 
-## Quick Start
+**Quick Start**
+
 1. Clone the repository  
-   ```bash
+   ```
    git clone https://github.com/yourorg/promptpal-cli.git
+   ```
+2. Change directory  
+   ```
    cd promptpal-cli
    ```
-2. Install the binary (requires Python 3.9+)  
-   ```bash
+3. Install the package in editable mode  
+   ```
    pip install -e .
    ```
-3. Initialize your prompt store (you will be prompted for a passphrase)  
-   ```bash
-   promptpal init
+4. Verify the installation  
    ```
-4. Store your first prompt  
-   ```bash
-   promptpal add "Translate to French" --content "Translate the following English sentence to French."
+   promptpal --help
    ```
-   Example output:  
+5. Store your first prompt  
    ```
-   Prompt 'Translate to French' stored with ID: 9f8e7d6c
+   promptpal store --name "example" --content "Hello, world!"
    ```
 
-## Examples
-**Store a new prompt version**  
+**Examples**
+
+**Store a new prompt**  
+Command:  
 ```
-$ promptpal add "Translate to French" --content "Translate the following English sentence to French."
-Prompt 'Translate to French' stored with ID: 9f8e7d6c (v1)
+promptpal store --name "summarizer" --content "Summarize the following paragraph:"
 ```
-**Add an updated version of the same prompt**  
+Output:  
 ```
-$ promptpal add "Translate to French" --content "Translate the provided English sentence into French, preserving tone."
-Prompt 'Translate to French' stored with ID: 9f8e7d6c (v2)
-```
-**List all revisions for a prompt**  
-```
-$ promptpal log "Translate to French"
-ID: 9f8e7d6c
-  v1: 2025-09-16 10:12:03 | Translate the following English sentence to French.
-  v2: 2025-09-16 10:15:41 | Translate the provided English sentence into French, preserving tone.
-```
-**Diff two revisions**  
-```
-$ promptpal diff 9f8e7d6c@v1 9f8e7d6c@v2
---- v1
-+++ v2
-@@ -1 +1 @@
--Translate the following English sentence to French.
-+Translate the provided English sentence into French, preserving tone.
-```
-**Retrieve the latest version for use in a script**  
-```
-$ promptpal get latest --name "Translate to French" --format plain
-Translate the provided English sentence into French, preserving tone.
+Stored prompt "summarizer" with ID 1
 ```
 
-## File Structure
+**Update a prompt (creates a new version)**  
+Command:  
+```
+promptpal store --name "summarizer" --content "Provide a brief summary of the text below:"
+```
+Output:  
+```
+Updated prompt "summarizer" to version 2
+```
+
+**Diff between two versions**  
+Command:  
+```
+promptpal diff --name "summarizer" --from 1 --to 2
+```
+Output:  
+```
+--- v1 (ID:1)  
++++ v2 (ID:2)  
+@@ -1 +1 @@  
+-Summarize the following paragraph:  
++Provide a brief summary of the text below:
+```
+
+**File Structure**
+
 ```
 PromptPal CLI/
-  promptpal/          # Core source code
-    __init__.py
-    cli.py           # Command‑line interface entry point
-    core.py          # Business logic for versioning and encryption
-    store.py         # SQLite storage layer with AES‑256 encryption
-    diff.py          # Side‑by‑side diff implementation
-    models.py        # Data classes for Prompt and Revision
-    tests/           # Unit tests
-      __init__.py
-      test_cli.py
-      test_diff.py
-      test_store.py
-  .gitignore
-  pyproject.toml     # Build metadata and dependencies
-  init.sh            # Helper script for dev environment setup
-  README.md
+├── promptpal/          # Core source code
+│   ├── cli.py          # Command‑line interface built with Click
+│   ├── core.py         # Orchestrates store, diff, and version logic
+│   ├── diff.py         # Unified diff implementation for prompts
+│   ├── models.py       # SQLAlchemy‑style models for Prompt and Version
+│   └── store.py        # Encrypted SQLite wrapper (AES‑256 via cryptography)
+├── tests/              # Test suite
+│   ├── test_cli.py
+│   ├── test_diff.py
+│   └── test_store.py
+├── assets/             # Documentation graphics
+│   └── infographic.png
+├── .gitignore
+├── pyproject.toml      # Project metadata, dependencies, and build system
+└── init.sh             # Optional setup script for development environments
 ```
 
-## Tech Stack
+**Tech Stack**
+
 | Technology | Purpose |
 |------------|---------|
-| Python 3.9+ | Language runtime |
-| SQLite | Embedded encrypted database |
-| cryptography library | AES‑256 encryption of prompts |
-| Click | CLI framework for subcommands |
-| Pytest | Test suite runner |
-| Git‑style hashing (SHA‑256) | Revision identifiers |
+| Python 3.9+ | Core language and runtime |
+| Click | Declarative command‑line interface |
+| SQLite3 | Embedded database for prompt storage |
+| cryptography | AES‑256 encryption of the database file |
+| difflib (std‑lib) | Generates prompt diffs |
+| pytest | Test framework |
 
-## Contributing
-Fork the repo, make your changes, run the test suite with `pytest`, then open a pull request. Ensure all tests pass and follow the existing code style.
+**Contributing**
 
-## License
+1. Fork the repository.  
+2. Create a feature branch.  
+3. Run `pytest` to verify changes.  
+4. Submit a pull request.
+
+**License**
+
 MIT
 
-## Author
+**Author**
+
 ```
 Matthew Snow -- [M2AI](https://m2ai.co) | [@m2ai-portfolio](https://github.com/m2ai-portfolio)
